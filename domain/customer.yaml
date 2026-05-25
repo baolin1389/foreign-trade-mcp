@@ -1,6 +1,7 @@
 name: Customer
 description: A converted customer in the foreign trade system
 table_name: customers
+version: "1.0"
 
 fields:
   id:
@@ -8,65 +9,385 @@ fields:
     primary_key: true
     auto_increment: true
     description: Unique identifier for the customer
+
   company_name:
     type: string
     required: true
     max_length: 255
     description: Customer's company name
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9\\s&.,-]*$"
+      message: "Company name must start with alphanumeric and contain valid characters"
+
   contact_name:
     type: string
     required: true
     max_length: 100
     description: Primary contact person's name
+    validation:
+      min_length: 2
+      max_length: 100
+
   contact_email:
     type: string
     required: true
     max_length: 255
     description: Primary contact email address
+    validation:
+      format: email
+      pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+
   contact_phone:
     type: string
     max_length: 50
     description: Contact phone number
+    validation:
+      pattern: "^[+]?[0-9\\s()-]{7,50}$"
+
   country:
     type: string
     required: true
     max_length: 100
     description: Country of customer's business
+    validation:
+      min_length: 2
+      max_length: 100
+
   industry:
     type: string
     max_length: 100
     description: Industry sector
+
   customer_type:
     type: string
     max_length: 20
     default: "importer"
     description: Type of customer (importer, exporter, both)
+    validation:
+      allowed_values:
+        - importer
+        - exporter
+        - both
+        - trading_company
+
   credit_limit:
     type: float
     default: 0.0
     description: Assigned credit limit
+    validation:
+      min: 0.0
+      max: 999999999.99
+
   payment_terms:
     type: string
     max_length: 50
     description: Agreed payment terms
+
   tax_id:
     type: string
     max_length: 50
     description: Tax identification number
+
   notes:
     type: text
     description: Additional notes about the customer
+
   is_active:
     type: boolean
     default: true
     description: Whether the customer is currently active
+
   created_at:
     type: datetime
     default: "now"
     description: Timestamp when customer was created
+
   updated_at:
     type: datetime
     description: Timestamp when customer was last updated
+
   lead_id:
     type: integer
     description: Reference to original lead if converted
+
+indexes:
+  - name: idx_customer_company
+    fields:
+      - company_name
+    unique: false
+    description: Index on company name for fast company lookups
+
+  - name: idx_customer_email
+    fields:
+      - contact_email
+    unique: true
+    description: Unique index on email for duplicate prevention
+
+  - name: idx_customer_country
+    fields:
+      - country
+    unique: false
+    description: Index on country for geographic analysis
+
+  - name: idx_customer_type_status
+    fields:
+      - customer_type
+      - is_active
+    unique: false
+    description: Composite index for filtering by type and active status
+
+  - name: idx_customer_created
+    fields:
+      - created_at
+    unique: false
+    description: Index for chronological customer analysis
+
+relationships:
+  - name: original_lead
+    type: belongs_to
+    target_model: Lead
+    foreign_key: lead_id
+    nullable: true
+    description: Reference to the original lead that converted to this customer
+
+  - name: email_records
+    type: has_many
+    target_model: EmailRecord
+    foreign_key: related_id
+    conditions:
+      related_type: "customer"
+    description: All email communications with this customer
+
+validations:
+  company_name:
+    - rule: not_blank
+      message: "Company name is required"
+    - rule: min_length
+      value: 2
+      message: "Company name must be at least 2 characters"
+    - rule: max_length
+      value: 255
+      message: "Company name cannot exceed 255 characters"
+
+  contact_email:
+    - rule: not_blank
+      message: "Contact email is required"
+    - rule: email_format
+      message: "Contact email must be a valid email address"
+
+  credit_limit:
+    - rule: non_negative
+      message: "Credit limit cannot be negative"
+
+metadata:
+  category: business_entity
+  retention_period_days: 2555
+  parent_module: crm
+  audit_log_enabled: true
+
+state_machine:
+  field: status
+  initial: active
+  final_states:
+    - inactive
+    - blacklisted
+  transitions:
+    - name: activate
+      from: inactive
+      to: active
+      description: Activate a customer account
+      on_transition:
+        action: send_welcome_email
+    - name: deactivate
+      from: active
+      to: inactive
+      description: Deactivate a customer account
+      guard: is_active == true
+      on_transition:
+        action: log_deactivation_reason
+    - name: blacklist
+      from: active
+      to: blacklisted
+      description: Blacklist a customer
+      guard: credit_limit == 0
+      on_transition:
+        action: notify_credit_team
+        action: suspend_orders
+    - name: remove_blacklist
+      from: blacklisted
+      to: active
+      description: Remove customer from blacklist
+      on_transition:
+        action: log_blacklist_removal
+    - name: reactivate
+      from: inactive
+      to: active
+      description: Reactivate an inactive customer
+      on_transition:
+        action: send_reactivation_email
+
+constraints:
+  - type: unique
+    fields:
+      - tax_id
+    message: "A customer with this tax ID already exists"
+    condition: "tax_id IS NOT NULL"
+  - type: check
+    condition: "credit_limit >= 0"
+    message: "Credit limit must be non-negative"
+  - type: check
+    condition: "customer_type IN ('importer', 'exporter', 'both', 'trading_company')"
+    message: "Invalid customer type"
+  - type: check
+    condition: "is_active = true OR status = 'inactive'"
+    message: "Inactive flag must match status"
+  - type: check
+    condition: "payment_terms IS NULL OR length(payment_terms) <= 50"
+    message: "Payment terms cannot exceed 50 characters"
+
+relations:
+  - name: original_lead
+    type: belongs_to
+    target_model: Lead
+    foreign_key: lead_id
+    nullable: true
+    description: Reference to the original lead that converted to this customer
+  - name: email_records
+    type: has_many
+    target_model: EmailRecord
+    foreign_key: related_id
+    conditions:
+      related_type: customer
+    description: All email communications with this customer
+  - name: orders
+    type: has_many
+    target_model: Order
+    foreign_key: customer_id
+    description: Orders placed by this customer
+    cascade: all
+  - name: documents
+    type: has_many
+    target_model: Document
+    description: Documents associated with this customer
+    cascade: null
+  - name: credit_history
+    type: has_many
+    target_model: CreditHistory
+    description: Credit limit change history
+    cascade: all
+
+actions:
+  - name: create_customer
+    description: Create a new customer
+    trigger: before_create
+    validation:
+      - field: company_name
+        rules:
+          - required
+          - min_length: 2
+          - max_length: 255
+      - field: contact_email
+        rules:
+          - required
+          - format: email
+      - field: contact_name
+        rules:
+          - required
+          - min_length: 2
+
+  - name: update_customer
+    description: Update an existing customer
+    trigger: before_update
+    validation:
+      - field: contact_email
+        rules:
+          - format: email
+      - field: credit_limit
+        rules:
+          - non_negative
+
+  - name: activate_customer
+    description: Activate a customer account
+    params:
+      - name: reason
+        type: string
+        required: false
+    on_execute:
+      - set_field: is_active
+        value: true
+      - set_field: updated_at
+        value: now()
+      - action: send_welcome_email
+
+  - name: deactivate_customer
+    description: Deactivate a customer account
+    params:
+      - name: reason
+        type: string
+        required: true
+    pre_conditions:
+      - condition: is_active == true
+        message: "Customer is already inactive"
+    on_execute:
+      - set_field: is_active
+        value: false
+      - set_field: updated_at
+        value: now()
+      - action: log_deactivation_reason
+
+  - name: update_credit_limit
+    description: Update customer credit limit
+    params:
+      - name: new_limit
+        type: float
+        required: true
+      - name: approved_by
+        type: integer
+        required: true
+    pre_conditions:
+      - condition: new_limit >= 0
+        message: "Credit limit cannot be negative"
+    on_execute:
+      - create_record:
+          entity: CreditHistory
+          data:
+            customer_id: "{{id}}"
+            old_limit: "{{credit_limit}}"
+            new_limit: new_limit
+            approved_by: approved_by
+            changed_at: now()
+      - set_field: credit_limit
+        value: new_limit
+      - set_field: updated_at
+        value: now()
+
+  - name: send_welcome_email
+    description: Send welcome email to new customer
+    internal: true
+    on_execute:
+      - create_record:
+          entity: EmailRecord
+          data:
+            related_type: customer
+            subject: "Welcome to Our Service"
+            direction: outbound
+
+  - name: log_deactivation_reason
+    description: Log reason for deactivation
+    internal: true
+
+  - name: notify_credit_team
+    description: Notify credit team when customer is blacklisted
+    internal: true
+
+  - name: suspend_orders
+    description: Suspend all pending orders for blacklisted customer
+    internal: true
+
+  - name: log_blacklist_removal
+    description: Log blacklist removal
+    internal: true
+
+  - name: send_reactivation_email
+    description: Send reactivation email to customer
+    internal: true

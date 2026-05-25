@@ -13,20 +13,24 @@ fields:
     required: true
     max_length: 255
     description: Name of the lead's company
+    min_length: 1
   contact_name:
     type: string
     required: true
     max_length: 100
     description: Primary contact person's name
+    min_length: 1
   contact_email:
     type: string
     required: true
     max_length: 255
     description: Primary contact email address
+    format: email
   contact_phone:
     type: string
     max_length: 50
     description: Contact phone number
+    pattern: '^\+?[0-9\-\s\(\)]+$'
   country:
     type: string
     required: true
@@ -40,12 +44,21 @@ fields:
     type: string
     max_length: 50
     description: Lead source (e.g., website, referral, trade_show)
+    allowed_values:
+      - website
+      - referral
+      - trade_show
+      - cold_call
+      - email_campaign
+      - social_media
+      - partner
+      - other
   status:
     type: string
     required: true
     max_length: 20
     default: "new"
-    description: Lead status (new, contacted, qualified, converted, lost)
+    description: Lead status
   notes:
     type: text
     description: Additional notes about the lead
@@ -59,3 +72,211 @@ fields:
   converted_at:
     type: datetime
     description: Timestamp when lead was converted to customer
+  converted_customer_id:
+    type: integer
+    description: Reference to converted customer (populated after conversion)
+  assigned_to:
+    type: integer
+    description: User ID of the assigned sales representative
+  priority:
+    type: string
+    max_length: 20
+    default: "medium"
+    description: Lead priority level
+    allowed_values:
+      - low
+      - medium
+      - high
+      - urgent
+  estimated_value:
+    type: float
+    description: Estimated potential deal value in USD
+    min: 0
+
+constraints:
+  - type: unique
+    fields:
+      - contact_email
+    message: "A lead with this email already exists"
+  - type: check
+    condition: "status IN ('new', 'contacted', 'qualified', 'converted', 'lost')"
+    message: "Invalid lead status"
+  - type: check
+    condition: "priority IN ('low', 'medium', 'high', 'urgent')"
+    message: "Invalid priority value"
+  - type: check
+    condition: "estimated_value IS NULL OR estimated_value >= 0"
+    message: "Estimated value must be non-negative"
+  - type: check
+    condition: "converted_at IS NULL OR status = 'converted'"
+    message: "Converted timestamp requires converted status"
+
+state_machine:
+  field: status
+  initial: new
+  final_states:
+    - converted
+    - lost
+  transitions:
+    - name: contact
+      from: new
+      to: contacted
+      description: Mark lead as contacted
+      guard: assigned_to IS NOT NULL
+      on_transition:
+        action: log_contact_attempt
+    - name: qualify
+      from: contacted
+      to: qualified
+      description: Qualify the lead as a potential customer
+      guard: estimated_value > 0
+      on_transition:
+        action: notify_sales_manager
+    - name: convert
+      from: qualified
+      to: converted
+      description: Convert lead to a customer
+      guard: converted_customer_id IS NOT NULL
+      on_transition:
+        action: create_customer_record
+        action: archive_lead_activities
+    - name: disqualify
+      from: qualified
+      to: lost
+      description: Mark lead as lost
+      on_transition:
+        action: log_loss_reason
+    - name: reactivate
+      from: lost
+      to: new
+      description: Reactivate a lost lead
+      on_transition:
+        action: clear_loss_reason
+    - name: back_to_new
+      from: contacted
+      to: new
+      description: Reset lead to new status
+    - name: requalify
+      from: lost
+      to: qualified
+      description: Re-engage and requalify a lost lead
+      guard: assigned_to IS NOT NULL
+
+relations:
+  - name: customer
+    type: has_one
+    target: Customer
+    description: The customer record created when this lead was converted
+    foreign_key: lead_id
+    cascade: null
+  - name: email_records
+    type: has_many
+    target: EmailRecord
+    description: Email communication records associated with this lead
+    foreign_key: related_id
+    conditions:
+      related_type: lead
+    cascade: all
+  - name: assigned_user
+    type: belongs_to
+    target: User
+    description: The sales representative assigned to this lead
+    foreign_key: assigned_to
+
+actions:
+  - name: create_lead
+    description: Create a new lead
+    trigger: before_create
+    validation:
+      - field: company_name
+        rules:
+          - required
+          - min_length: 1
+          - max_length: 255
+      - field: contact_email
+        rules:
+          - required
+          - format: email
+      - field: contact_name
+        rules:
+          - required
+
+  - name: update_lead
+    description: Update an existing lead
+    trigger: before_update
+    validation:
+      - field: contact_email
+        rules:
+          - format: email
+
+  - name: assign_lead
+    description: Assign a sales representative to the lead
+    params:
+      - name: user_id
+        type: integer
+        required: true
+    on_execute:
+      - set_field: assigned_to
+        value: user_id
+      - set_field: updated_at
+        value: now()
+      - if: status == "new"
+        then:
+          - set_field: status
+            value: contacted
+
+  - name: convert_to_customer
+    description: Convert lead to a customer record
+    params:
+      - name: customer_type
+        type: string
+        required: false
+        default: importer
+      - name: credit_limit
+        type: float
+        required: false
+        default: 0.0
+    pre_conditions:
+      - status: qualified
+      - condition: converted_customer_id IS NULL
+        message: "Lead has already been converted"
+    on_execute:
+      - action: create_customer_from_lead
+        params:
+          customer_type: customer_type
+          credit_limit: credit_limit
+      - set_field: status
+        value: converted
+      - set_field: converted_at
+        value: now()
+
+  - name: log_contact_attempt
+    description: Log a contact attempt
+    internal: true
+    on_execute:
+      - create_record:
+          entity: EmailRecord
+          data:
+            related_type: lead
+            subject: "Contact Attempt"
+            direction: outbound
+
+  - name: notify_sales_manager
+    description: Notify sales manager of qualified lead
+    internal: true
+
+  - name: create_customer_record
+    description: Create customer record on conversion
+    internal: true
+
+  - name: archive_lead_activities
+    description: Archive lead activities on conversion
+    internal: true
+
+  - name: log_loss_reason
+    description: Log the reason for losing the lead
+    internal: true
+
+  - name: clear_loss_reason
+    description: Clear loss reason when reactivating
+    internal: true

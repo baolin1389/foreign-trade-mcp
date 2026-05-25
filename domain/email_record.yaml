@@ -1,6 +1,7 @@
 name: EmailRecord
 description: Email communication record for tracking correspondence with leads and customers
 table_name: email_records
+version: "1.0"
 
 fields:
   id:
@@ -8,65 +9,486 @@ fields:
     primary_key: true
     auto_increment: true
     description: Unique identifier for the email record
+
   related_type:
     type: string
     required: true
     max_length: 20
     description: Type of related entity (lead, customer)
+    validation:
+      allowed_values:
+        - lead
+        - customer
+        - prospect
+
   related_id:
     type: integer
     required: true
     description: ID of the related lead or customer
+    validation:
+      min: 1
+
   subject:
     type: string
     required: true
     max_length: 500
     description: Email subject line
+    validation:
+      not_blank: true
+      min_length: 3
+      max_length: 500
+
   body:
     type: text
     description: Email body content
+    validation:
+      max_length: 65535
+
   direction:
     type: string
     required: true
     max_length: 10
     description: Email direction (inbound, outbound)
+    validation:
+      allowed_values:
+        - inbound
+        - outbound
+
   status:
     type: string
     max_length: 20
     default: "sent"
     description: Email status (draft, sent, delivered, failed, bounced)
+    validation:
+      allowed_values:
+        - draft
+        - queued
+        - sent
+        - delivered
+        - opened
+        - clicked
+        - bounced
+        - failed
+        - unsubscribed
+
   sent_at:
     type: datetime
     description: Timestamp when email was sent
+
   delivered_at:
     type: datetime
     description: Timestamp when email was delivered
+
   from_email:
     type: string
     required: true
     max_length: 255
     description: Sender email address
+    validation:
+      format: email
+
   to_email:
     type: string
     required: true
     max_length: 255
     description: Recipient email address
+    validation:
+      format: email
+
   cc_emails:
     type: string
     max_length: 500
     description: CC recipient emails (comma separated)
+    validation:
+      pattern: "^([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+(\\.[a-zA-Z]{2,})?)(,[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+(\\.[a-zA-Z]{2,})?)*$"
+      message: "CC emails must be comma-separated valid email addresses"
+
   bcc_emails:
     type: string
     max_length: 500
     description: BCC recipient emails (comma separated)
+    validation:
+      pattern: "^([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+(\\.[a-zA-Z]{2,})?)(,[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+(\\.[a-zA-Z]{2,})?)*$"
+      message: "BCC emails must be comma-separated valid email addresses"
+
   attachments:
     type: string
     max_length: 1000
     description: JSON array of attachment filenames
+
   created_at:
     type: datetime
     default: "now"
     description: Timestamp when record was created
+
   updated_at:
     type: datetime
     description: Timestamp when record was last updated
+
+indexes:
+  - name: idx_email_related
+    fields:
+      - related_type
+      - related_id
+    unique: false
+    description: Index for fetching emails by related entity
+
+  - name: idx_email_direction
+    fields:
+      - direction
+    unique: false
+    description: Index for filtering by email direction
+
+  - name: idx_email_status
+    fields:
+      - status
+    unique: false
+    description: Index for filtering by email status
+
+  - name: idx_email_sent_at
+    fields:
+      - sent_at
+    unique: false
+    description: Index for chronological email analysis
+
+  - name: idx_email_from
+    fields:
+      - from_email
+    unique: false
+    description: Index for sender lookups
+
+  - name: idx_email_to
+    fields:
+      - to_email
+    unique: false
+    description: Index for recipient lookups
+
+relationships:
+  - name: customer
+    type: belongs_to
+    target_model: Customer
+    foreign_key: related_id
+    conditions:
+      related_type: "customer"
+    nullable: true
+    description: Associated customer if email is related to a customer
+
+  - name: lead
+    type: belongs_to
+    target_model: Lead
+    foreign_key: related_id
+    conditions:
+      related_type: "lead"
+    nullable: true
+    description: Associated lead if email is related to a lead
+
+validations:
+  subject:
+    - rule: not_blank
+      message: "Email subject is required"
+    - rule: min_length
+      value: 3
+      message: "Subject must be at least 3 characters"
+
+  from_email:
+    - rule: not_blank
+      message: "From email is required"
+    - rule: email_format
+      message: "From email must be a valid email address"
+
+  to_email:
+    - rule: not_blank
+      message: "To email is required"
+    - rule: email_format
+      message: "To email must be a valid email address"
+
+  delivered_at:
+    - rule: after
+      field: sent_at
+      message: "Delivered timestamp must be after sent timestamp"
+
+metadata:
+  category: communication
+  retention_period_days: 365
+  parent_module: communications
+  audit_log_enabled: true
+
+state_machine:
+  field: status
+  initial: draft
+  final_states:
+    - failed
+    - bounced
+    - unsubscribed
+  transitions:
+    - name: queue
+      from: draft
+      to: queued
+      description: Queue email for sending
+      on_transition:
+        action: prepare_email_headers
+    - name: send
+      from: queued
+      to: sent
+      description: Send the email
+      guard: from_email IS NOT NULL
+      on_transition:
+        action: record_sent_timestamp
+    - name: deliver
+      from: sent
+      to: delivered
+      description: Mark email as delivered
+      guard: delivered_at IS NOT NULL
+    - name: open
+      from: delivered
+      to: opened
+      description: Mark email as opened by recipient
+      on_transition:
+        action: track_open_metrics
+    - name: click
+      from: opened
+      to: clicked
+      description: Mark email link as clicked
+      on_transition:
+        action: track_click_metrics
+    - name: bounce
+      from: sent
+      to: bounced
+      description: Mark email as bounced
+      on_transition:
+        action: handle_bounce
+    - name: fail
+      from: draft
+      to: failed
+      description: Mark email as failed
+      on_transition:
+        action: log_failure_reason
+    - name: unsubscribe
+      from: delivered
+      to: unsubscribed
+      description: Recipient unsubscribed
+      on_transition:
+        action: remove_from_mailing_list
+
+constraints:
+  - type: check
+    condition: "direction IN ('inbound', 'outbound')"
+    message: "Invalid email direction"
+  - type: check
+    condition: "status IN ('draft', 'queued', 'sent', 'delivered', 'opened', 'clicked', 'bounced', 'failed', 'unsubscribed')"
+    message: "Invalid email status"
+  - type: check
+    condition: "delivered_at IS NULL OR sent_at IS NOT NULL"
+    message: "Email cannot be delivered before being sent"
+  - type: check
+    condition: "delivered_at IS NULL OR delivered_at >= sent_at"
+    message: "Delivered timestamp must be after sent timestamp"
+  - type: check
+    condition: "related_type IN ('lead', 'customer', 'prospect')"
+    message: "Invalid related type"
+  - type: check
+    condition: "length(subject) >= 3 AND length(subject) <= 500"
+    message: "Subject must be between 3 and 500 characters"
+
+relations:
+  - name: customer
+    type: belongs_to
+    target_model: Customer
+    foreign_key: related_id
+    conditions:
+      related_type: customer
+    nullable: true
+    description: Associated customer if email is related to a customer
+  - name: lead
+    type: belongs_to
+    target_model: Lead
+    foreign_key: related_id
+    conditions:
+      related_type: lead
+    nullable: true
+    description: Associated lead if email is related to a lead
+  - name: attachments_list
+    type: has_many
+    target_model: EmailAttachment
+    foreign_key: email_record_id
+    description: Attachments for this email
+    cascade: all
+
+actions:
+  - name: create_email_record
+    description: Create a new email record
+    trigger: before_create
+    validation:
+      - field: subject
+        rules:
+          - required
+          - min_length: 3
+          - max_length: 500
+      - field: from_email
+        rules:
+          - required
+          - format: email
+      - field: to_email
+        rules:
+          - required
+          - format: email
+      - field: related_type
+        rules:
+          - required
+          - allowed_values:
+              - lead
+              - customer
+              - prospect
+      - field: direction
+        rules:
+          - required
+
+  - name: update_email_record
+    description: Update an existing email record
+    trigger: before_update
+    validation:
+      - field: subject
+        rules:
+          - min_length: 3
+          - max_length: 500
+      - field: from_email
+        rules:
+          - format: email
+      - field: to_email
+        rules:
+          - format: email
+
+  - name: send_email
+    description: Send an email
+    params:
+      - name: smtp_config
+        type: object
+        required: false
+    pre_conditions:
+      - condition: status == "draft" OR status == "queued"
+        message: "Email must be in draft or queued status to send"
+      - condition: from_email IS NOT NULL AND to_email IS NOT NULL
+        message: "From and To emails are required"
+    on_execute:
+      - set_field: status
+        value: sent
+      - set_field: sent_at
+        value: now()
+      - action: connect_smtp
+      - action: send_via_smtp
+
+  - name: mark_delivered
+    description: Mark email as delivered
+    params:
+      - name: delivery_timestamp
+        type: datetime
+        required: true
+    pre_conditions:
+      - condition: status == "sent"
+        message: "Only sent emails can be marked as delivered"
+    on_execute:
+      - set_field: status
+        value: delivered
+      - set_field: delivered_at
+        value: delivery_timestamp
+
+  - name: mark_opened
+    description: Mark email as opened
+    pre_conditions:
+      - condition: status == "delivered"
+        message: "Only delivered emails can be marked as opened"
+    on_execute:
+      - set_field: status
+        value: opened
+
+  - name: mark_clicked
+    description: Mark email link as clicked
+    params:
+      - name: click_url
+        type: string
+        required: false
+    pre_conditions:
+      - condition: status == "opened"
+        message: "Only opened emails can have links clicked"
+    on_execute:
+      - set_field: status
+        value: clicked
+
+  - name: mark_bounced
+    description: Mark email as bounced
+    params:
+      - name: bounce_reason
+        type: string
+        required: true
+    pre_conditions:
+      - condition: status == "sent"
+        message: "Only sent emails can bounce"
+    on_execute:
+      - set_field: status
+        value: bounced
+      - action: log_bounce_reason
+
+  - name: mark_failed
+    description: Mark email as failed
+    params:
+      - name: failure_reason
+        type: string
+        required: true
+    on_execute:
+      - set_field: status
+        value: failed
+      - action: log_failure_reason
+
+  - name: prepare_email_headers
+    description: Prepare email headers before sending
+    internal: true
+    on_execute:
+      - set_field: status
+        value: queued
+
+  - name: record_sent_timestamp
+    description: Record the sent timestamp
+    internal: true
+
+  - name: track_open_metrics
+    description: Track email open metrics
+    internal: true
+
+  - name: track_click_metrics
+    description: Track email click metrics
+    internal: true
+
+  - name: handle_bounce
+    description: Handle bounced email
+    internal: true
+    on_execute:
+      - action: update_mailing_list
+      - action: notify_admin
+
+  - name: log_failure_reason
+    description: Log email failure reason
+    internal: true
+
+  - name: remove_from_mailing_list
+    description: Remove recipient from mailing list
+    internal: true
+
+  - name: connect_smtp
+    description: Connect to SMTP server
+    internal: true
+
+  - name: send_via_smtp
+    description: Send email via SMTP
+    internal: true
+
+  - name: log_bounce_reason
+    description: Log bounce reason
+    internal: true
+
+  - name: update_mailing_list
+    description: Update mailing list on bounce
+    internal: true
+
+  - name: notify_admin
+    description: Notify admin of bounce
+    internal: true
