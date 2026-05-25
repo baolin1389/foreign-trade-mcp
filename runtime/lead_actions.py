@@ -72,14 +72,14 @@ class LeadActions:
                 created_lead = repo.create(lead)
                 
                 return {
-                    "success": True,
                     "lead_id": created_lead.lead_id,
-                    "data": self._lead_to_dict(created_lead)
+                    "status": "new",
+                    "created_at": created_lead.created_at.isoformat() if created_lead.created_at else None,
                 }
         except KeyError as e:
-            return {"success": False, "error": f"Missing required field: {e}"}
+            return {"error": f"Missing required field: {e}"}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def get_lead(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get lead details by lead_id.
@@ -90,22 +90,21 @@ class LeadActions:
         try:
             lead_id = params.get("lead_id")
             if not lead_id:
-                return {"success": False, "error": "Missing required field: lead_id"}
+                return {"error": "Missing required field: lead_id"}
             
             with get_db_session() as session:
                 repo = LeadRepository(session)
                 lead = repo.get_by_lead_id(lead_id)
                 
                 if lead is None:
-                    return {"success": False, "error": f"Lead not found: {lead_id}"}
+                    return {"error": f"Lead not found: {lead_id}"}
                 
                 return {
-                    "success": True,
                     "lead_id": lead.lead_id,
-                    "data": self._lead_to_dict(lead)
+                    "status": lead.status,
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def update_lead(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Update an existing lead.
@@ -119,14 +118,14 @@ class LeadActions:
         try:
             lead_id = params.get("lead_id")
             if not lead_id:
-                return {"success": False, "error": "Missing required field: lead_id"}
+                return {"error": "Missing required field: lead_id"}
             
             with get_db_session() as session:
                 repo = LeadRepository(session)
                 lead = repo.get_by_lead_id(lead_id)
                 
                 if lead is None:
-                    return {"success": False, "error": f"Lead not found: {lead_id}"}
+                    return {"error": f"Lead not found: {lead_id}"}
                 
                 # Update allowed fields
                 updatable_fields = [
@@ -155,7 +154,7 @@ class LeadActions:
                     "updated_at": lead.updated_at.isoformat()
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def list_leads(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all leads with optional filtering and pagination.
@@ -187,7 +186,6 @@ class LeadActions:
                     total = repo.count()
                 
                 return {
-                    "success": True,
                     "leads": [self._lead_to_dict(lead) for lead in leads],
                     "pagination": {
                         "page": page,
@@ -196,7 +194,7 @@ class LeadActions:
                     }
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def delete_lead(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete a lead by lead_id.
@@ -207,77 +205,76 @@ class LeadActions:
         try:
             lead_id = params.get("lead_id")
             if not lead_id:
-                return {"success": False, "error": "Missing required field: lead_id"}
+                return {"error": "Missing required field: lead_id"}
             
             with get_db_session() as session:
                 repo = LeadRepository(session)
                 lead = repo.get_by_lead_id(lead_id)
                 
                 if lead is None:
-                    return {"success": False, "error": f"Lead not found: {lead_id}"}
+                    return {"error": f"Lead not found: {lead_id}"}
                 
                 # Use internal id for deletion
                 deleted = repo.delete(lead.id)
                 
                 if deleted:
                     return {
-                        "success": True,
                         "lead_id": lead_id,
                         "deleted": True
                     }
                 else:
-                    return {"success": False, "error": "Failed to delete lead"}
+                    return {"error": "Failed to delete lead"}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def qualify_lead(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Qualify a lead with a score. Score must be >= 60."""
         lead_id = params.get("lead_id")
         if not lead_id:
-            return {"success": False, "error": "Missing required field: lead_id"}
+            return {"error": "Missing required field: lead_id"}
 
         score = params.get("qualification_score")
         if score is None:
-            return {"success": False, "error": "Missing required field: qualification_score"}
+            return {"error": "Missing required field: qualification_score"}
 
         try:
             score = int(score)
         except (TypeError, ValueError):
-            return {"success": False, "error": "qualification_score must be an integer"}
+            return {"error": "qualification_score must be an integer"}
 
         if score < 60:
-            return {"success": False, "error": "Score must be >= 60 to qualify a lead"}
+            return {"error": "Score must be >= 60 to qualify a lead"}
 
         with get_db_session() as sess:
             repo = LeadRepository(sess)
             lead = repo.get_by_lead_id(lead_id)
             if not lead:
-                return {"success": False, "error": f"Lead not found: {lead_id}"}
+                return {"error": f"Lead not found: {lead_id}"}
             if lead.status not in ("raw_lead", "new"):
-                return {"success": False, "error": f"Cannot qualify lead with status: {lead.status}"}
+                return {"error": f"Cannot qualify lead with status: {lead.status}"}
 
             lead.status = "qualified"
             lead.qualification_score = score
             lead.qualification_notes = params.get("qualification_notes", "")
             sess.add(lead)
 
-        return {"success": True, "lead_id": lead_id, "status": "qualified", "score": score}
+        return {"lead_id": lead_id, "status": "qualified", "score": score}
 
     def reject_lead(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Reject a lead."""
         lead_id = params.get("lead_id")
         if not lead_id:
-            return {"success": False, "error": "Missing required field: lead_id"}
+            return {"error": "Missing required field: lead_id"}
 
         with get_db_session() as sess:
             repo = LeadRepository(sess)
             lead = repo.get_by_lead_id(lead_id)
             if not lead:
-                return {"success": False, "error": f"Lead not found: {lead_id}"}
+                return {"error": f"Lead not found: {lead_id}"}
             lead.status = "rejected"
             sess.add(lead)
 
-        return {"success": True, "lead_id": lead_id, "status": "rejected"}
+        return {"lead_id": lead_id, "status": "rejected"}
 
     def convert_lead(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Convert a lead to a customer.
@@ -293,7 +290,7 @@ class LeadActions:
         try:
             lead_id = params.get("lead_id")
             if not lead_id:
-                return {"success": False, "error": "Missing required field: lead_id"}
+                return {"error": "Missing required field: lead_id"}
             
             with get_db_session() as session:
                 lead_repo = LeadRepository(session)
@@ -301,7 +298,7 @@ class LeadActions:
                 
                 lead = lead_repo.get_by_lead_id(lead_id)
                 if lead is None:
-                    return {"success": False, "error": f"Lead not found: {lead_id}"}
+                    return {"error": f"Lead not found: {lead_id}"}
                 
                 # Generate customer_id
                 customer_id = f"cust_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -328,13 +325,12 @@ class LeadActions:
                 lead_repo.update(lead)
                 
                 return {
-                    "success": True,
                     "lead_id": lead_id,
                     "customer_id": created_customer.customer_id,
                     "converted_at": datetime.utcnow().isoformat()
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def search_leads(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Search leads by various criteria.
@@ -380,7 +376,6 @@ class LeadActions:
                         total = repo.count()
                 
                 return {
-                    "success": True,
                     "leads": [self._lead_to_dict(lead) for lead in leads],
                     "pagination": {
                         "page": page,
@@ -389,7 +384,7 @@ class LeadActions:
                     }
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def _lead_to_dict(self, lead: Lead) -> Dict[str, Any]:
         """Convert Lead model to dictionary."""

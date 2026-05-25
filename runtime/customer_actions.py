@@ -49,7 +49,7 @@ class CustomerActions:
         required = ["company_name", "country"]
         for field in required:
             if field not in params:
-                return {"success": False, "error": f"Missing required field: {field}"}
+                return {"error": f"Missing required field: {field}"}
 
         try:
             with get_db_session() as session:
@@ -88,22 +88,19 @@ class CustomerActions:
                 lead_repo.create(lead)
                 
                 return {
-                    "success": True,
                     "customer_id": customer_id,
-                    "data": {
-                        "company_name": customer.company_name,
-                        "contact_status": customer.contact_status,
-                        "country": customer.country,
-                        "business_type": customer.business_type,
-                        "source_channel": customer.source_channel,
-                        "notes": customer.notes,
-                        "phone": customer.phone,
-                        "website": customer.website,
-                        "created_at": customer.created_at.isoformat() if customer.created_at else datetime.utcnow().isoformat()
-                    }
+                    "company_name": customer.company_name,
+                    "contact_status": customer.contact_status,
+                    "country": customer.country,
+                    "business_type": customer.business_type,
+                    "source_channel": customer.source_channel,
+                    "notes": customer.notes,
+                    "phone": customer.phone,
+                    "website": customer.website,
+                    "created_at": customer.created_at.isoformat() if customer.created_at else datetime.utcnow().isoformat()
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def get_customer(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -112,7 +109,7 @@ class CustomerActions:
         Required params: customer_id
         """
         if "customer_id" not in params:
-            return {"success": False, "error": "Missing required field: customer_id"}
+            return {"error": "Missing required field: customer_id"}
 
         try:
             with get_db_session() as session:
@@ -120,29 +117,24 @@ class CustomerActions:
                 customer = repo.get_by_customer_id(params["customer_id"])
                 
                 if not customer:
-                    return {"success": False, "error": f"Customer not found: {params['customer_id']}"}
+                    return {"error": f"Customer not found: {params['customer_id']}"}
                 
                 return {
-                    "success": True,
                     "customer_id": customer.customer_id,
-                    "data": {
-                        "company_name": customer.company_name,
-                        "country": customer.country,
-                        "business_type": customer.business_type,
-                        "source_channel": customer.source_channel,
-                        "contact_status": customer.contact_status,
-                        "next_follow_up_date": customer.next_follow_up_date,
-                        "follow_up_records": customer.follow_up_records,
-                        "notes": customer.notes,
-                        "phone": customer.phone,
-                        "website": customer.website,
-                        "send_time_window": customer.send_time_window,
-                        "created_at": customer.created_at.isoformat() if customer.created_at else None,
-                        "updated_at": customer.updated_at.isoformat() if customer.updated_at else None,
-                    }
+                    "company_name": customer.company_name,
+                    "country": customer.country,
+                    "business_type": customer.business_type,
+                    "source_channel": customer.source_channel,
+                    "contact_status": customer.contact_status,
+                    "next_follow_up_date": customer.next_follow_up_date,
+                    "follow_up_records": customer.follow_up_records,
+                    "notes": customer.notes,
+                    "phone": customer.phone,
+                    "website": customer.website,
+                    "created_at": customer.created_at.isoformat() if customer.created_at else None
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def update_customer(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -153,7 +145,7 @@ class CustomerActions:
                         follow_up_records, notes, phone, website, business_type
         """
         if "customer_id" not in params:
-            return {"success": False, "error": "Missing required field: customer_id"}
+            return {"error": "Missing required field: customer_id"}
 
         try:
             with get_db_session() as session:
@@ -161,7 +153,7 @@ class CustomerActions:
                 customer = repo.get_by_customer_id(params["customer_id"])
                 
                 if not customer:
-                    return {"success": False, "error": f"Customer not found: {params['customer_id']}"}
+                    return {"error": f"Customer not found: {params['customer_id']}"}
                 
                 # Update allowed fields
                 updatable_fields = [
@@ -178,13 +170,12 @@ class CustomerActions:
                 repo.update(customer)
                 
                 return {
-                    "success": True,
                     "customer_id": customer.customer_id,
                     "updated_fields": updated_fields,
                     "updated_at": customer.updated_at.isoformat() if customer.updated_at else datetime.utcnow().isoformat()
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def list_customers(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -226,7 +217,6 @@ class CustomerActions:
                 ]
                 
                 return {
-                    "success": True,
                     "customers": customer_list,
                     "pagination": {
                         "page": page,
@@ -235,7 +225,7 @@ class CustomerActions:
                     }
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def delete_customer(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -244,7 +234,7 @@ class CustomerActions:
         Required params: customer_id
         """
         if "customer_id" not in params:
-            return {"success": False, "error": "Missing required field: customer_id"}
+            return {"error": "Missing required field: customer_id"}
 
         try:
             with get_db_session() as session:
@@ -253,7 +243,7 @@ class CustomerActions:
                 customer = repo.get_by_customer_id(params["customer_id"])
                 
                 if not customer:
-                    return {"success": False, "error": f"Customer not found: {params['customer_id']}"}
+                    return {"error": f"Customer not found: {params['customer_id']}"}
                 
                 success = repo.delete(customer.id)
                 
@@ -263,7 +253,7 @@ class CustomerActions:
                     "deleted": success
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def get_customer_orders(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -273,7 +263,7 @@ class CustomerActions:
         Required params: customer_id
         """
         if "customer_id" not in params:
-            return {"success": False, "error": "Missing required field: customer_id"}
+            return {"error": "Missing required field: customer_id"}
 
         try:
             with get_db_session() as session:
@@ -282,7 +272,7 @@ class CustomerActions:
                 
                 customer = customer_repo.get_by_customer_id(params["customer_id"])
                 if not customer:
-                    return {"success": False, "error": f"Customer not found: {params['customer_id']}"}
+                    return {"error": f"Customer not found: {params['customer_id']}"}
                 
                 # Get leads by company name (since lead doesn't have customer_id directly)
                 # In a real system, there would be a proper foreign key relationship
@@ -293,7 +283,6 @@ class CustomerActions:
                 ]
                 
                 return {
-                    "success": True,
                     "customer_id": params["customer_id"],
                     "orders": [
                         {
@@ -311,7 +300,7 @@ class CustomerActions:
                     ]
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def add_follow_up_record(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -321,9 +310,9 @@ class CustomerActions:
         Optional params: next_follow_up_date
         """
         if "customer_id" not in params:
-            return {"success": False, "error": "Missing required field: customer_id"}
+            return {"error": "Missing required field: customer_id"}
         if "follow_up_record" not in params:
-            return {"success": False, "error": "Missing required field: follow_up_record"}
+            return {"error": "Missing required field: follow_up_record"}
 
         try:
             with get_db_session() as session:
@@ -331,7 +320,7 @@ class CustomerActions:
                 customer = repo.get_by_customer_id(params["customer_id"])
                 
                 if not customer:
-                    return {"success": False, "error": f"Customer not found: {params['customer_id']}"}
+                    return {"error": f"Customer not found: {params['customer_id']}"}
                 
                 # Append to existing follow-up records
                 existing_records = customer.follow_up_records or ""
@@ -354,7 +343,6 @@ class CustomerActions:
                 repo.update(customer)
                 
                 return {
-                    "success": True,
                     "customer_id": customer.customer_id,
                     "follow_up_record": new_record,
                     "follow_up_records": customer.follow_up_records,
@@ -362,7 +350,7 @@ class CustomerActions:
                     "updated_at": customer.updated_at.isoformat() if customer.updated_at else None,
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def get_customer_by_lead(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -371,7 +359,7 @@ class CustomerActions:
         Required params: lead_id
         """
         if "lead_id" not in params:
-            return {"success": False, "error": "Missing required field: lead_id"}
+            return {"error": "Missing required field: lead_id"}
 
         try:
             with get_db_session() as session:
@@ -380,7 +368,7 @@ class CustomerActions:
                 
                 lead = lead_repo.get_by_lead_id(params["lead_id"])
                 if not lead:
-                    return {"success": False, "error": f"Lead not found: {params['lead_id']}"}
+                    return {"error": f"Lead not found: {params['lead_id']}"}
                 
                 # Check if customer already exists for this lead
                 existing_customer = customer_repo.get_by_customer_id(f"cust_from_lead_{params['lead_id']}")
@@ -414,14 +402,11 @@ class CustomerActions:
                 lead_repo.update(lead)
                 
                 return {
-                    "success": True,
                     "customer_id": customer_id,
-                    "data": {
-                        "company_name": customer.company_name,
-                        "country": customer.country,
-                        "contact_status": customer.contact_status,
-                    },
+                    "company_name": customer.company_name,
+                    "country": customer.country,
+                    "contact_status": customer.contact_status,
                     "is_new": True
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}

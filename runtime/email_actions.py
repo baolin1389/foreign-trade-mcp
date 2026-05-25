@@ -40,7 +40,7 @@ class EmailActions:
         required = ["customer_id", "to_email", "subject", "body"]
         for field in required:
             if field not in params:
-                return {"success": False, "error": f"Missing required field: {field}"}
+                return {"error": f"Missing required field: {field}"}
 
         try:
             with get_db_session() as session:
@@ -48,7 +48,7 @@ class EmailActions:
                 customer = customer_repo.get_by_customer_id(params["customer_id"])
                 
                 if not customer:
-                    return {"success": False, "error": f"Customer not found: {params['customer_id']}"}
+                    return {"error": f"Customer not found: {params['customer_id']}"}
                 
                 # Generate email_id
                 email_id = f"email_{datetime.utcnow().strftime('%Y%m%d')}_{str(uuid.uuid4())[:6]}"
@@ -77,7 +77,6 @@ class EmailActions:
                 customer_repo.update(customer)
                 
                 return {
-                    "success": True,
                     "email_id": email_id,
                     "customer_id": params["customer_id"],
                     "to": params["to_email"],
@@ -86,7 +85,7 @@ class EmailActions:
                     "status": "sent"
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def get_email(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -98,7 +97,7 @@ class EmailActions:
         customer_id = params.get("customer_id")
 
         if not email_id and not customer_id:
-            return {"success": False, "error": "Missing required field: email_id or customer_id"}
+            return {"error": "Missing required field: email_id or customer_id"}
 
         try:
             with get_db_session() as session:
@@ -117,16 +116,15 @@ class EmailActions:
                     email_record = repo.get_by_id(int(email_id.replace("email_", "")) if "email_" in str(email_id) else email_id) if email_id.isdigit() else None
                     
                     if not email_record:
-                        return {"success": False, "error": f"Email not found: {email_id}"}
+                        return {"error": f"Email not found: {email_id}"}
                 else:
                     # Get most recent email for customer
                     emails = repo.get_by_customer_id(customer_id, offset=0, limit=1)
                     if not emails:
-                        return {"success": False, "error": f"No emails found for customer: {customer_id}"}
+                        return {"error": f"No emails found for customer: {customer_id}"}
                     email_record = emails[0]
                 
                 return {
-                    "success": True,
                     "email_id": email_record.id,
                     "data": {
                         "customer_id": email_record.customer_id,
@@ -143,7 +141,7 @@ class EmailActions:
                     }
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def list_emails(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -193,7 +191,6 @@ class EmailActions:
                 ]
                 
                 return {
-                    "success": True,
                     "emails": email_list,
                     "pagination": {
                         "page": page,
@@ -202,7 +199,7 @@ class EmailActions:
                     }
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def delete_email(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -211,7 +208,7 @@ class EmailActions:
         Required params: email_id
         """
         if "email_id" not in params:
-            return {"success": False, "error": "Missing required field: email_id"}
+            return {"error": "Missing required field: email_id"}
 
         try:
             with get_db_session() as session:
@@ -219,7 +216,7 @@ class EmailActions:
                 email_id = int(params["email_id"]) if str(params["email_id"]).isdigit() else None
                 
                 if email_id is None:
-                    return {"success": False, "error": "Invalid email_id format"}
+                    return {"error": "Invalid email_id format"}
                 
                 success = repo.delete(email_id)
                 
@@ -229,7 +226,7 @@ class EmailActions:
                     "deleted": success
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def send_bulk_emails(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -243,11 +240,11 @@ class EmailActions:
         body = params.get("body")
 
         if not recipients:
-            return {"success": False, "error": "No recipients provided"}
+            return {"error": "No recipients provided"}
         if not subject:
-            return {"success": False, "error": "Subject is required"}
+            return {"error": "Subject is required"}
         if not body:
-            return {"success": False, "error": "Body is required"}
+            return {"error": "Body is required"}
 
         try:
             results = []
@@ -329,7 +326,7 @@ class EmailActions:
                 "results": results
             }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def mark_as_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -339,7 +336,7 @@ class EmailActions:
         Optional params: status (defaults to "read")
         """
         if "email_id" not in params:
-            return {"success": False, "error": "Missing required field: email_id"}
+            return {"error": "Missing required field: email_id"}
 
         try:
             with get_db_session() as session:
@@ -347,11 +344,11 @@ class EmailActions:
                 email_id = int(params["email_id"]) if str(params["email_id"]).isdigit() else None
                 
                 if email_id is None:
-                    return {"success": False, "error": "Invalid email_id format"}
+                    return {"error": "Invalid email_id format"}
                 
                 email_record = repo.get_by_id(email_id)
                 if not email_record:
-                    return {"success": False, "error": f"Email not found: {params['email_id']}"}
+                    return {"error": f"Email not found: {params['email_id']}"}
                 
                 new_status = params.get("status", "read")
                 email_record.status = new_status
@@ -359,13 +356,12 @@ class EmailActions:
                 repo.update(email_record)
                 
                 return {
-                    "success": True,
                     "email_id": params["email_id"],
                     "status": new_status,
                     "updated_at": email_record.updated_at.isoformat()
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
 
     def get_emails_by_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -375,7 +371,7 @@ class EmailActions:
         Optional params: page, per_page
         """
         if "send_status" not in params:
-            return {"success": False, "error": "Missing required field: send_status"}
+            return {"error": "Missing required field: send_status"}
 
         page = params.get("page", 1)
         per_page = params.get("per_page", 20)
@@ -404,7 +400,6 @@ class EmailActions:
                 ]
                 
                 return {
-                    "success": True,
                     "send_status": params["send_status"],
                     "emails": email_list,
                     "pagination": {
@@ -414,4 +409,4 @@ class EmailActions:
                     }
                 }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"error": str(e)}
