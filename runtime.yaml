@@ -1,0 +1,40 @@
+mcp_version: "1.0"
+name: foreign-trade-mcp
+description: Foreign Trade Management MCP - CRM for managing leads, customers, and email communications in international trade
+version: "1.0.0"
+
+domains:
+  - lead
+  - customer
+  - email_record
+
+database:
+  type: sqlite
+  path: foreign_trade.db
+  echo: false
+
+repositories:
+  lead:
+    model: Lead
+    table: leads
+  customer:
+    model: Customer
+    table: customers
+  email_record:
+    model: EmailRecord
+    table: email_records
+
+config:
+  pagination:
+    default_page_size: 20
+    max_page_size: 100
+  email:
+    max_attachment_size_mb: 25
+    supported_attachment_types:
+      - pdf
+      - doc
+      - docx
+      - xls
+      - xlsx
+      - png
+      - jpg

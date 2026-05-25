@@ -1,0 +1,72 @@
+name: EmailRecord
+description: Email communication record for tracking correspondence with leads and customers
+table_name: email_records
+
+fields:
+  id:
+    type: integer
+    primary_key: true
+    auto_increment: true
+    description: Unique identifier for the email record
+  related_type:
+    type: string
+    required: true
+    max_length: 20
+    description: Type of related entity (lead, customer)
+  related_id:
+    type: integer
+    required: true
+    description: ID of the related lead or customer
+  subject:
+    type: string
+    required: true
+    max_length: 500
+    description: Email subject line
+  body:
+    type: text
+    description: Email body content
+  direction:
+    type: string
+    required: true
+    max_length: 10
+    description: Email direction (inbound, outbound)
+  status:
+    type: string
+    max_length: 20
+    default: "sent"
+    description: Email status (draft, sent, delivered, failed, bounced)
+  sent_at:
+    type: datetime
+    description: Timestamp when email was sent
+  delivered_at:
+    type: datetime
+    description: Timestamp when email was delivered
+  from_email:
+    type: string
+    required: true
+    max_length: 255
+    description: Sender email address
+  to_email:
+    type: string
+    required: true
+    max_length: 255
+    description: Recipient email address
+  cc_emails:
+    type: string
+    max_length: 500
+    description: CC recipient emails (comma separated)
+  bcc_emails:
+    type: string
+    max_length: 500
+    description: BCC recipient emails (comma separated)
+  attachments:
+    type: string
+    max_length: 1000
+    description: JSON array of attachment filenames
+  created_at:
+    type: datetime
+    default: "now"
+    description: Timestamp when record was created
+  updated_at:
+    type: datetime
+    description: Timestamp when record was last updated

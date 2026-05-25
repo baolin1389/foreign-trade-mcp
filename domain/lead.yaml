@@ -1,0 +1,61 @@
+name: Lead
+description: A potential customer or business prospect in the foreign trade system
+table_name: leads
+
+fields:
+  id:
+    type: integer
+    primary_key: true
+    auto_increment: true
+    description: Unique identifier for the lead
+  company_name:
+    type: string
+    required: true
+    max_length: 255
+    description: Name of the lead's company
+  contact_name:
+    type: string
+    required: true
+    max_length: 100
+    description: Primary contact person's name
+  contact_email:
+    type: string
+    required: true
+    max_length: 255
+    description: Primary contact email address
+  contact_phone:
+    type: string
+    max_length: 50
+    description: Contact phone number
+  country:
+    type: string
+    required: true
+    max_length: 100
+    description: Country of the lead's business
+  industry:
+    type: string
+    max_length: 100
+    description: Industry sector
+  source:
+    type: string
+    max_length: 50
+    description: Lead source (e.g., website, referral, trade_show)
+  status:
+    type: string
+    required: true
+    max_length: 20
+    default: "new"
+    description: Lead status (new, contacted, qualified, converted, lost)
+  notes:
+    type: text
+    description: Additional notes about the lead
+  created_at:
+    type: datetime
+    default: "now"
+    description: Timestamp when lead was created
+  updated_at:
+    type: datetime
+    description: Timestamp when lead was last updated
+  converted_at:
+    type: datetime
+    description: Timestamp when lead was converted to customer
