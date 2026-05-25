@@ -1,180 +1,247 @@
-"""Foreign Trade MCP - Main entry point.
-
-This MCP provides tools for company/professional search and enrichment
-via the Prospeo API integration.
+"""
+Foreign Trade MCP — CLI Entry Point
+===================================
+Usage:
+    python main.py list_leads
+    python main.py create_lead --company "ACME GmbH" --name "John" --email "john@acme.de" --country Germany
+    python main.py qualify_lead --id lead_xxx --score 75
+    python main.py convert_lead --id lead_xxx
+    python main.py list_customers
+    python main.py create_customer --company "ACME GmbH" --country Germany
+    python main.py list_email_records
+    python main.py send_email --customer cust_xxx --to test@example.com --from eric@seporange.com.cn --subject "Hello"
 """
 
-import sys
 import argparse
-from typing import Optional
+import sys
+import os
+from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+# Add project root
+sys.path.insert(0, str(Path(__file__).parent))
 
-
-# Initialize FastMCP server
-mcp = FastMCP("foreign-trade-mcp")
-
-# Import tools to register them with the server
-from mcp import tools as mcp_tools
-
-
-@mcp.tool()
-def search_company(name: str) -> dict:
-    """Search for a company by name.
-
-    Args:
-        name: Company name to search for.
-
-    Returns:
-        Search results with company information.
-    """
-    return mcp_tools.search_company(name)
-
-
-@mcp.tool()
-def enrich_company(
-    company_name: str,
-    company_website: Optional[str] = None,
-    company_linkedin_url: Optional[str] = None,
-    company_id: Optional[str] = None
-) -> dict:
-    """Enrich company data with full profile.
-
-    Args:
-        company_name: Name of the company.
-        company_website: Optional website domain.
-        company_linkedin_url: Optional LinkedIn URL.
-        company_id: Optional Prospeo company ID.
-
-    Returns:
-        Enriched company profile.
-    """
-    return mcp_tools.enrich_company(
-        company_name=company_name,
-        company_website=company_website
-    )
-
-
-@mcp.tool()
-def search_person(
-    first_name: Optional[str] = None,
-    last_name: Optional[str] = None,
-    full_name: Optional[str] = None,
-    company_name: Optional[str] = None,
-    company_website: Optional[str] = None,
-    person_job_title: Optional[str] = None
-) -> dict:
-    """Search for professionals matching criteria.
-
-    Args:
-        first_name: Person's first name.
-        last_name: Person's last name.
-        full_name: Full name as alternative.
-        company_name: Current employer name.
-        company_website: Company website domain.
-        person_job_title: Job title to search for.
-
-    Returns:
-        Search results with person matches.
-    """
-    return mcp_tools.search_person(
-        first_name=first_name,
-        last_name=last_name,
-        full_name=full_name,
-        company_name=company_name,
-        company_website=company_website,
-        person_job_title=person_job_title
-    )
-
-
-@mcp.tool()
-def enrich_person(
-    full_name: Optional[str] = None,
-    first_name: Optional[str] = None,
-    last_name: Optional[str] = None,
-    company_name: Optional[str] = None,
-    company_website: Optional[str] = None,
-    enrich_mobile: bool = False
-) -> dict:
-    """Enrich person with contact details.
-
-    Args:
-        full_name: Full name of person.
-        first_name: First name.
-        last_name: Last name.
-        company_name: Current employer.
-        company_website: Company website.
-        enrich_mobile: Whether to lookup mobile (costs extra credits).
-
-    Returns:
-        Enriched person profile with contact info.
-    """
-    return mcp_tools.enrich_person(
-        full_name=full_name,
-        first_name=first_name,
-        last_name=last_name,
-        company_name=company_name,
-        company_website=company_website,
-        enrich_mobile=enrich_mobile
-    )
-
-
-@mcp.tool()
-def get_account_info() -> dict:
-    """Get account status and remaining credits.
-
-    Returns:
-        Account information including credits and plan details.
-    """
-    return mcp_tools.get_account_info()
+from infrastructure.database import init_db
+from runtime.engine import Engine
 
 
 def main():
-    """Main entry point for the foreign trade MCP."""
-    parser = argparse.ArgumentParser(
-        description="Foreign Trade MCP Server",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python main.py                     Start the MCP server (stdio transport)
-  python main.py --info             Show server information
-  python main.py --transport sse    Use SSE transport
-        """
-    )
-    parser.add_argument(
-        "--info",
-        action="store_true",
-        help="Show server information and available tools"
-    )
-    parser.add_argument(
-        "--transport",
-        choices=["stdio", "sse", "streamable-http"],
-        default="stdio",
-        help="Transport protocol to use (default: stdio)"
-    )
-    parser.add_argument(
-        "--mount-path",
-        default=None,
-        help="Mount path for SSE/streamable-http transports"
-    )
+    parser = argparse.ArgumentParser(description="Foreign Trade MCP CLI")
+    sub = parser.add_subparsers(dest="command", help="Available commands")
+
+    # list_leads
+    p = sub.add_parser("list_leads", help="List leads")
+    p.add_argument("--page", type=int, default=1)
+    p.add_argument("--page_size", type=int, default=20)
+    p.add_argument("--status", help="Filter by status")
+    p.add_argument("--country", help="Filter by country")
+
+    # create_lead
+    p = sub.add_parser("create_lead", help="Create a lead")
+    p.add_argument("--company", required=True, help="Company name")
+    p.add_argument("--name", required=True, help="Contact name")
+    p.add_argument("--email", required=True, help="Contact email")
+    p.add_argument("--country", required=True, help="Country")
+    p.add_argument("--phone", help="Phone number")
+    p.add_argument("--source", help="Lead source")
+
+    # get_lead
+    p = sub.add_parser("get_lead", help="Get a lead")
+    p.add_argument("--id", required=True, help="Lead ID")
+
+    # update_lead
+    p = sub.add_parser("update_lead", help="Update a lead")
+    p.add_argument("--id", required=True, help="Lead ID")
+    p.add_argument("--status", help="New status")
+    p.add_argument("--notes", help="Notes")
+
+    # qualify_lead
+    p = sub.add_parser("qualify_lead", help="Qualify a lead")
+    p.add_argument("--id", required=True, help="Lead ID")
+    p.add_argument("--score", type=int, required=True, help="Qualification score (>=60)")
+    p.add_argument("--notes", help="Notes")
+
+    # reject_lead
+    p = sub.add_parser("reject_lead", help="Reject a lead")
+    p.add_argument("--id", required=True, help="Lead ID")
+    p.add_argument("--reason", help="Rejection reason")
+
+    # convert_lead
+    p = sub.add_parser("convert_lead", help="Convert lead to customer")
+    p.add_argument("--id", required=True, help="Lead ID")
+
+    # list_customers
+    p = sub.add_parser("list_customers", help="List customers")
+    p.add_argument("--page", type=int, default=1)
+    p.add_argument("--page_size", type=int, default=20)
+    p.add_argument("--status", help="Filter by contact_status")
+    p.add_argument("--country", help="Filter by country")
+
+    # create_customer
+    p = sub.add_parser("create_customer", help="Create a customer")
+    p.add_argument("--company", required=True, help="Company name")
+    p.add_argument("--country", required=True, help="Country")
+    p.add_argument("--name", help="Contact name")
+    p.add_argument("--email", help="Contact email")
+    p.add_argument("--phone", help="Phone")
+    p.add_argument("--type", dest="business_type", help="Business type")
+    p.add_argument("--source", dest="source_channel", help="Source channel")
+    p.add_argument("--notes", help="Notes")
+
+    # get_customer
+    p = sub.add_parser("get_customer", help="Get a customer")
+    p.add_argument("--id", required=True, help="Customer ID")
+
+    # update_customer
+    p = sub.add_parser("update_customer", help="Update a customer")
+    p.add_argument("--id", required=True, help="Customer ID")
+    p.add_argument("--status", help="New contact_status")
+    p.add_argument("--notes", help="Notes")
+
+    # list_email_records
+    p = sub.add_parser("list_email_records", help="List email records")
+    p.add_argument("--page", type=int, default=1)
+    p.add_argument("--page_size", type=int, default=20)
+    p.add_argument("--customer", help="Filter by customer_id")
+    p.add_argument("--status", help="Filter by status")
+
+    # send_email
+    p = sub.add_parser("send_email", help="Send email")
+    p.add_argument("--customer", required=True, help="Customer ID")
+    p.add_argument("--to", required=True, help="Recipient email")
+    p.add_argument("--from", dest="from_email", required=True, help="Sender email")
+    p.add_argument("--subject", required=True, help="Email subject")
+    p.add_argument("--body", help="Email body")
+
+    # list_actions
+    sub.add_parser("list_actions", help="List all available actions")
 
     args = parser.parse_args()
 
-    if args.info:
-        print("Foreign Trade MCP Server")
-        print("=" * 40)
-        print("Available tools:")
-        print("  - search_company    Search for companies by name")
-        print("  - enrich_company    Get detailed company profile")
-        print("  - search_person     Search for professionals")
-        print("  - enrich_person     Get person contact details")
-        print("  - get_account_info  Check account credits and status")
-        print()
-        print(f"Transport: {args.transport}")
+    if not args.command:
+        parser.print_help()
         return
 
-    print(f"Starting Foreign Trade MCP Server (transport: {args.transport})...")
-    mcp.run(transport=args.transport, mount_path=args.mount_path)
+    os.chdir(Path(__file__).parent)
+    init_db()
+    engine = Engine()
+
+    # Route command
+    if args.command == "list_leads":
+        params = {"page": args.page, "page_size": args.page_size}
+        if args.status:
+            params["status"] = args.status
+        if args.country:
+            params["country"] = args.country
+        result = engine.execute("lead.list_leads", params)
+
+    elif args.command == "create_lead":
+        params = {
+            "company_name": args.company,
+            "contact_name": args.name,
+            "contact_email": args.email,
+            "country": args.country,
+        }
+        if args.phone:
+            params["contact_phone"] = args.phone
+        if args.source:
+            params["source"] = args.source
+        result = engine.execute("lead.create_lead", params)
+
+    elif args.command == "get_lead":
+        result = engine.execute("lead.get_lead", {"lead_id": args.id})
+
+    elif args.command == "update_lead":
+        params = {"lead_id": args.id}
+        if args.status:
+            params["status"] = args.status
+        if args.notes:
+            params["qualification_notes"] = args.notes
+        result = engine.execute("lead.update_lead", params)
+
+    elif args.command == "qualify_lead":
+        params = {"lead_id": args.id, "qualification_score": args.score}
+        if args.notes:
+            params["qualification_notes"] = args.notes
+        result = engine.execute("lead.qualify_lead", params)
+
+    elif args.command == "reject_lead":
+        params = {"lead_id": args.id}
+        if args.reason:
+            params["qualification_notes"] = args.reason
+        result = engine.execute("lead.reject_lead", params)
+
+    elif args.command == "convert_lead":
+        result = engine.execute("lead.convert_lead", {"lead_id": args.id})
+
+    elif args.command == "list_customers":
+        params = {"page": args.page, "page_size": args.page_size}
+        if args.status:
+            params["contact_status"] = args.status
+        if args.country:
+            params["country"] = args.country
+        result = engine.execute("customer.list_customers", params)
+
+    elif args.command == "create_customer":
+        params = {"company_name": args.company, "country": args.country}
+        if args.name:
+            params["contact_name"] = args.name
+        if args.email:
+            params["contact_email"] = args.email
+        if args.phone:
+            params["contact_phone"] = args.phone
+        if args.business_type:
+            params["business_type"] = args.business_type
+        if args.source_channel:
+            params["source_channel"] = args.source_channel
+        if args.notes:
+            params["notes"] = args.notes
+        result = engine.execute("customer.create_customer", params)
+
+    elif args.command == "get_customer":
+        result = engine.execute("customer.get_customer", {"customer_id": args.id})
+
+    elif args.command == "update_customer":
+        params = {"customer_id": args.id}
+        if args.status:
+            params["contact_status"] = args.status
+        if args.notes:
+            params["notes"] = args.notes
+        result = engine.execute("customer.update_customer", params)
+
+    elif args.command == "list_email_records":
+        params = {"page": args.page, "page_size": args.page_size}
+        if args.customer:
+            params["customer_id"] = args.customer
+        if args.status:
+            params["status"] = args.status
+        result = engine.execute("email.list_email_records", params)
+
+    elif args.command == "send_email":
+        params = {
+            "customer_id": args.customer,
+            "to_email": args.to,
+            "from_email": args.from_email,
+            "subject": args.subject,
+        }
+        if args.body:
+            params["body"] = args.body
+        result = engine.execute("email.send_email", params)
+
+    elif args.command == "list_actions":
+        import json
+        print(json.dumps(engine.list_actions(), indent=2, ensure_ascii=False))
+        return
+
+    else:
+        result = {"success": False, "error": f"Unknown command: {args.command}"}
+
+    # Output
+    if result.get("success"):
+        import json
+        print(json.dumps(result.get("result"), indent=2, ensure_ascii=False))
+    else:
+        print(f"ERROR: {result.get('error')}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

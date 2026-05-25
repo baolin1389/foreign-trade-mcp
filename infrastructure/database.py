@@ -15,8 +15,10 @@ from contextlib import contextmanager
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from sqlmodel.pool import StaticPool
 
-# Database path configuration
-DATABASE_PATH = os.environ.get("DATABASE_PATH", "foreign_trade.db")
+# Database path — stored in data/ directory (gitignored)
+DB_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "data")
+os.makedirs(DB_DIR, exist_ok=True)
+DATABASE_PATH = os.path.join(DB_DIR, "foreign_trade.db")
 
 
 class Lead(SQLModel, table=True):
@@ -108,6 +110,11 @@ engine = create_engine(
 def init_db():
     """Initialize the database, creating all tables."""
     SQLModel.metadata.create_all(engine)
+
+
+def get_engine():
+    """Get the shared database engine."""
+    return engine
 
 
 def get_session() -> Session:

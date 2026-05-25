@@ -1,40 +1,260 @@
-mcp_version: "1.0"
+# Foreign Trade MCP — Runtime Manifest
+# ======================================
+# AI reads this to understand: entities, actions, constraints, state machines
+# runtime-engine reads this for config (future: auto-register actions)
+# human reads this as the business spec
+
 name: foreign-trade-mcp
-description: Foreign Trade Management MCP - CRM for managing leads, customers, and email communications in international trade
+description: |
+  Foreign Trade CRM — manages leads, customers, and email communications
+  in international trade. Covers: lead acquisition → qualification → customer
+  conversion → email follow-up lifecycle.
 version: "1.0.0"
+author: Sep Orange International Trade
+website: https://github.com/baolin1389/foreign-trade-mcp
 
-domains:
-  - lead
-  - customer
-  - email_record
+# Entry point
+entry: main.py:CLI
 
-database:
-  type: sqlite
-  path: foreign_trade.db
-  echo: false
+# Standard directory layout (AI-readable convention)
+directories:
+  domain/: "Entity DSL definitions (YAML). One file per entity."
+  runtime/actions/: "Business action implementations. One file per domain."
+  infrastructure/: "Database models (SQLModel) and repositories."
+  data/: "SQLite database files. *.db files are gitignored."
 
-repositories:
-  lead:
-    model: Lead
-    table: leads
-  customer:
-    model: Customer
-    table: customers
-  email_record:
-    model: EmailRecord
-    table: email_records
+# Infrastructure config
+infrastructure:
+  database:
+    type: sqlite
+    path: data/foreign_trade.db
+    auto_init: true
 
-config:
-  pagination:
-    default_page_size: 20
-    max_page_size: 100
-  email:
-    max_attachment_size_mb: 25
-    supported_attachment_types:
-      - pdf
-      - doc
-      - docx
-      - xls
-      - xlsx
-      - png
-      - jpg
+# Entity registry — AI reads this to know what entities exist
+entities:
+  - name: Lead
+    domain_file: domain/lead.yaml
+    description: "Customer acquisition leads (客户采集表)"
+  - name: Customer
+    domain_file: domain/customer.yaml
+    description: "Customer development records (客户开发表)"
+  - name: EmailRecord
+    domain_file: domain/email_record.yaml
+    description: "Email communication records (邮件记录表)"
+
+# Actions registry — AI reads this to know what it can call
+actions:
+  # Lead actions
+  - name: create_lead
+    domain: lead
+    params:
+      - company_name (required)
+      - contact_name (required)
+      - contact_email (required)
+      - country (required)
+      - contact_phone (optional)
+      - source (optional)
+      - product_interest (optional)
+      - website (optional)
+      - status (optional, default=new)
+
+  - name: get_lead
+    domain: lead
+    params:
+      - lead_id (required)
+
+  - name: list_leads
+    domain: lead
+    params:
+      - page (optional, default=1)
+      - page_size (optional, default=20)
+      - status (optional, filter)
+      - country (optional, filter)
+
+  - name: update_lead
+    domain: lead
+    params:
+      - lead_id (required)
+      - any_other_fields (optional, update fields)
+
+  - name: delete_lead
+    domain: lead
+    params:
+      - lead_id (required)
+
+  - name: qualify_lead
+    domain: lead
+    params:
+      - lead_id (required)
+      - score (required, integer >= 60)
+      - notes (optional)
+
+  - name: reject_lead
+    domain: lead
+    params:
+      - lead_id (required)
+      - reason (optional)
+
+  - name: convert_lead
+    domain: lead
+    params:
+      - lead_id (required, must be status=qualified)
+
+  # Customer actions
+  - name: create_customer
+    domain: customer
+    params:
+      - company_name (required)
+      - country (required)
+      - contact_name (optional)
+      - contact_email (optional)
+      - contact_phone (optional)
+      - business_type (optional)
+      - source_channel (optional)
+      - notes (optional)
+      - contact_status (optional, default=new)
+
+  - name: get_customer
+    domain: customer
+    params:
+      - customer_id (required)
+
+  - name: list_customers
+    domain: customer
+    params:
+      - page (optional, default=1)
+      - page_size (optional, default=20)
+      - contact_status (optional, filter)
+      - country (optional, filter)
+
+  - name: update_customer
+    domain: customer
+    params:
+      - customer_id (required)
+      - any_other_fields (optional, update fields)
+
+  - name: delete_customer
+    domain: customer
+    params:
+      - customer_id (required, soft-delete)
+
+  # Email actions
+  - name: create_email_record
+    domain: email
+    params:
+      - customer_id (required)
+      - to_email (required)
+      - from_email (required)
+      - subject (required)
+      - body (optional)
+      - status (optional, default=draft)
+
+  - name: send_email
+    domain: email
+    params:
+      - customer_id (required)
+      - to_email (required)
+      - from_email (required)
+      - subject (required)
+      - body (optional)
+      - first_send_status (optional, default=sent)
+
+  - name: get_email_record
+    domain: email
+    params:
+      - email_id (required)
+
+  - name: list_email_records
+    domain: email
+    params:
+      - page (optional, default=1)
+      - page_size (optional, default=20)
+      - customer_id (optional, filter)
+      - status (optional, filter)
+
+  - name: delete_email_record
+    domain: email
+    params:
+      - email_id (required)
+
+# State machine definitions (AI-readable)
+state_machines:
+  lead_lifecycle:
+    entity: Lead
+    initial_state: new
+    terminal_states: [qualified, converted, rejected, lost]
+    states:
+      - new: "Fresh lead"
+      - contacted: "Initial contact made"
+      - qualified: "Lead qualified (score>=60)"
+      - converted: "Converted to customer"
+      - rejected: "Rejected"
+      - lost: "Lost"
+    transitions:
+      - new → contacted: update_lead (status=contacted)
+      - new → qualified: qualify_lead (score>=60)
+      - new → rejected: reject_lead
+      - contacted → qualified: qualify_lead (score>=60)
+      - contacted → lost: reject_lead
+      - qualified → converted: convert_lead
+      - qualified → lost: reject_lead
+
+  customer_lifecycle:
+    entity: Customer
+    initial_state: new
+    terminal_states: [closed_won, closed_lost]
+    states:
+      - new: "Newly converted customer"
+      - 未联系: "Not yet contacted"
+      - 已联系: "Contact made"
+      - 已报价: "Quote sent"
+      - 已打样: "Sample sent"
+      - 成交: "Deal closed"
+      - closed_won: "Won"
+      - closed_lost: "Lost"
+    transitions:
+      - new → 未联系: update_customer (contact_status=未联系)
+      - 未联系 → 已联系: update_customer (contact_status=已联系)
+      - 已联系 → 已报价: update_customer (contact_status=已报价)
+      - 已报价 → 已打样: update_customer (contact_status=已打样)
+      - 已打样 → 成交: update_customer (contact_status=成交)
+      - 成交 → closed_won: update_customer (contact_status=closed_won)
+      - 已联系 → closed_lost: update_customer (contact_status=closed_lost)
+
+# Constraints — business rules AI must respect
+constraints:
+  - name: lead_email_format
+    entity: Lead
+    condition: "contact_email matches email regex"
+    error_message: "Invalid email format"
+    severity: error
+
+  - name: lead_score_range
+    entity: Lead
+    condition: "qualification_score is null or (qualification_score >= 0 and qualification_score <= 100)"
+    error_message: "Qualification score must be 0-100"
+    severity: error
+
+  - name: lead_qualified_requires_score
+    entity: Lead
+    condition: "status != 'qualified' or qualification_score >= 60"
+    error_message: "Lead must have score>=60 to be qualified"
+    severity: error
+
+  - name: customer_email_format
+    entity: Customer
+    condition: "contact_email is null or contact_email == '' or contact_email matches email regex"
+    error_message: "Invalid email format"
+    severity: error
+
+  - name: valid_lead_status
+    entity: Lead
+    condition: "status in ['new','contacted','qualified','converted','rejected','lost']"
+    error_message: "Invalid lead status"
+    severity: error
+
+  - name: valid_customer_status
+    entity: Customer
+    condition: "contact_status in ['new','未联系','已联系','已报价','已打样','成交','closed_won','closed_lost','deleted']"
+    error_message: "Invalid customer status"
+    severity: error

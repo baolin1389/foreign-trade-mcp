@@ -1,0 +1,5 @@
+# SQLite database files — NEVER commit these
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
